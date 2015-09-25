@@ -301,7 +301,6 @@ def create_totals(temporary_store = None, year = None):
         )
     indivi.loc[indivi_without_declarant_has_declar2, 'idfoy'] = where(decl2_idfoy.isin(with_.values), decl2_idfoy, None)
 
-
     del with_, without, indivi_without_declarant_has_declar2
 
     log.info(u"    5.1 : Elimination idfoy restant")

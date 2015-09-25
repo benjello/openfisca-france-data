@@ -161,6 +161,27 @@ def sif(temporary_store = None, year = None):
 
     del sif["stamar"]
 
+<<<<<<< Updated upstream
+=======
+    # Drop a declaration if more than 2 (yes it happens)
+    if year == 2009:
+        # Maraige et divorce dans l'année, on élimine le premier célibat
+        sif.drop(sif.index[sif.declar == "01-09005688-C1979-9999-X00 M-F2004"], inplace = True)
+
+    duplicated_noindiv = sif.noindiv[sif.noindiv.duplicated()].copy()
+    assert duplicated_noindiv.value_counts().max() == 1
+
+    sif['duplicated_noindiv'] = sif.noindiv.isin(duplicated_noindiv)
+    sif['change'] = "NONE"
+    sif.loc[sif.duplicated_noindiv, 'change'] = sif.loc[sif.duplicated_noindiv, 'declar'].str[27:28]
+
+    log.info("Double declaration: \n {}".format(sif.change.value_counts(dropna = False)))
+
+    log.info("Number of individuals: {}".format(len(sif.noindiv)))
+    log.info("Number of duplicated individuals: {}".format(len(duplicated_noindiv)))
+    log.info("Number of distinct individuals: {}".format(len(sif.noindiv.value_counts())))
+
+>>>>>>> Stashed changes
     log.info(u"Saving sif")
     temporary_store['sif_{}'.format(year)] = sif
     del sif
@@ -181,33 +202,17 @@ def foyer_all(temporary_store = None, year = None):
     # rename variable to fxzz ou ^f[0-9][a-z]{2}")
     renamed_variables = ["f{}".format(x[1:]) for x in variables]
 
-    foyer = foyer_all[variables + ["noindiv", "declar"]].copy()  # Memory expensive ...
+    foyer = foyer_all[variables + ["noindiv"] + ["declar"]].copy()  # Memory expensive ...
     del foyer_all
     gc.collect()
     foyer.rename(columns = dict(zip(variables, renamed_variables)), inplace = True)
 
-    # Drop a declaration if more than 2 (yes it happens)
-    #    if year == 2009:
-    #        # Maraige et divorce dans l'année, on élimine le premier célibat
-    #        foyer.drop(sif.index[sif.declar == "01-09005688-C1979-9999-X00 M-F2004"], inplace = True)
-
-    duplicated_noindiv = foyer.noindiv[foyer.noindiv.duplicated()].copy()
-    assert duplicated_noindiv.value_counts().max() == 1
-
-    foyer['duplicated_noindiv'] = sif.noindiv.isin(duplicated_noindiv)
-    foyer['change'] = "NONE"
-    foyer.loc[foyer.duplicated_noindiv, 'change'] = foyer.loc[foyer.duplicated_noindiv, 'declar'].str[27:28]
-
-    log.info("Number of individuals: {}".format(len(foyer.noindiv)))
-    log.info("Number of duplicated individuals: {}".format(len(duplicated_noindiv)))
-    log.info("Number of distinct individuals: {}".format(len(foyer.noindiv.value_counts())))
-
-    # On aggrège les déclarations dans le cas où un individu a fait plusieurs déclarations
-    # foyer = foyer.groupby("noindiv", as_index = False).aggregate(numpy.sum)
+#    # On aggrège les déclarations dans le cas où un individu a fait plusieurs déclarations
+#    foyer = foyer.groupby("noindiv", as_index = False).aggregate(numpy.sum)
     print_id(foyer)
 
     # On récupère les variables individualisables
-    var_dict = {
+    cases_by_variable = {
         'sali': ['f1aj', 'f1bj', 'f1cj', 'f1dj', 'f1ej'],
         'choi': ['f1ap', 'f1bp', 'f1cp', 'f1dp', 'f1ep'],
         'fra': ['f1ak', 'f1bk', 'f1ck', 'f1dk', 'f1ek'],
@@ -364,45 +369,33 @@ def foyer_all(temporary_store = None, year = None):
         'f8uu': ['f8uu'],  #
         }
 
-    vars_sets = [set(var_list) for var_list in var_dict.values()]
-    eligible_vars = (set().union(*vars_sets)).intersection(set(list(foyer.columns)))
+    case_set = [set(cases) for cases in cases_by_variable.values()]
+    eligibles_cases = (set().union(*case_set)).intersection(set(list(foyer.columns)))
 
     log.info(
         u"From {} variables, we keep {} eligibles variables".format(
-            len(set().union(*vars_sets)),
-            len(eligible_vars),
+            len(set().union(*case_set)),
+            len(eligibles_cases),
             )
         )
 
-    qui = ['vous', 'conj', 'pac1', 'pac2', 'pac3']
-    #    err = 0
-    #    err_vars = {}
+    quifoy = ['vous', 'conj', 'pac1', 'pac2', 'pac3']
 
     foy_ind = DataFrame()
-    for individual_var, foyer_vars in var_dict.iteritems():
-        try:
-            selection = foyer[foyer_vars + ["noindiv"]].copy()
-        except KeyError:
-            # Testing if at least one variable of foyers_vars is in the eligible list
-            presence = [x in eligible_vars for x in foyer_vars]
-            if not any(presence):
-                log.info("{} is not present".format(individual_var))
-                continue
-            else:
-                # Shrink the list
-                foyer_vars_cleaned = [var for var, present in zip(foyer_vars, presence) if present is True]
-                selection = foyer[foyer_vars_cleaned + ["noindiv"]].copy()
+    for variable, cases in cases_by_variable.iteritems():
+        available_cases = [case for case in cases if case in eligibles_cases]
+        selection = foyer[available_cases + ["noindiv", "declar"]].copy()
 
         # Reshape the dataframe
-        selection.rename(columns = dict(zip(foyer_vars, qui)), inplace = True)
-        selection.set_index("noindiv", inplace = True)
+        selection.rename(columns = dict(zip(cases_by_variable, quifoy)), inplace = True)
+        selection.set_index("declar", inplace = True)
         selection.columns.name = "quifoy"
 
         selection = selection.stack()
-        selection.name = individual_var
+        selection.name = variable
         selection = selection.reset_index()  # A Series cannot see its index resetted to produce a DataFrame
-        selection = selection.set_index(["quifoy", "noindiv"])
-        selection = selection[selection[individual_var] != 0].copy()
+        selection = selection.set_index(["quifoy", "declar"])
+        selection = selection[selection[variable] != 0].copy()
 
         if len(foy_ind) == 0:
             foy_ind = selection
@@ -411,7 +404,7 @@ def foyer_all(temporary_store = None, year = None):
 
     foy_ind.reset_index(inplace = True)
 
-    ind_vars_to_remove = Series(list(eligible_vars))
+    ind_vars_to_remove = Series(list(eligibles_cases))
     temporary_store['ind_vars_to_remove_{}'.format(year)] = ind_vars_to_remove
     foy_ind.rename(columns = {"noindiv": "idfoy"}, inplace = True)
 
@@ -434,6 +427,7 @@ def foyer_all(temporary_store = None, year = None):
 
 if __name__ == '__main__':
     year = 2009
+    logging.basicConfig(level = logging.INFO, filename = 'step_06.log', filemode = 'w')
     sif(year = year)
     foyer_all(year = year)
     log.info(u"étape 05 foyer terminée")
