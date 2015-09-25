@@ -151,11 +151,18 @@ def sif(temporary_store = None, year = None):
 
     del sif["stamar"]
 
+    # Drop a declaration if more than 2 (yes it happens)
+    if year == 2009:
+        # Maraige et divorce dans l'année, on élimine le premier célibat
+        sif.drop(sif.index[sif.declar == "01-09005688-C1979-9999-X00 M-F2004"], inplace = True)
+
     duplicated_noindiv = sif.noindiv[sif.noindiv.duplicated()].copy()
+    assert duplicated_noindiv.value_counts().max() == 1
+
     sif['duplicated_noindiv'] = sif.noindiv.isin(duplicated_noindiv)
-    x = sif.loc[sif.duplicated_noindiv, ['noindiv', 'declar']]
     sif['change'] = "NONE"
     sif.loc[sif.duplicated_noindiv, 'change'] = sif.loc[sif.duplicated_noindiv, 'declar'].str[27:28]
+
 
     log.info("Number of individuals: {}".format(len(sif.noindiv)))
     log.info("Number of duplicated individuals: {}".format(len(duplicated_noindiv)))
