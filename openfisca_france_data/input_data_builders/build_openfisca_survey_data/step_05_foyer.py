@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 
@@ -132,8 +132,18 @@ def sif(temporary_store = None, year = None):
     sif["dateZ"] = sif.sif.str[52 + d: 60 + d]
     sif["causeXYZ"] = sif.sif.str[60 + d: 61 + d]
 
+    sif['days_in_year'] = (
+        (sif.dateX.str[0:2].astype('int') + sif.dateX.str[2:4].astype('int') * 30) * sif["caseX"] +
+        (sif.dateY.str[0:2].astype('int') + sif.dateY.str[2:4].astype('int') * 30) * sif["caseY"] +
+        (sif.dateZ.str[0:2].astype('int') + sif.dateZ.str[2:4].astype('int') * 30) * sif["caseZ"]
+        )
+    sif['revenue_factor'] = (
+        (sif.causeXYZ != '') * 365 / sif.days_in_year +
+        (sif.causeXYZ == '') * 365 / (365 - sif.days_in_year)
+        ) * (sif.days_in_year > 0)    # 1 for non double declaration
     # TODO: convert dateXYZ to appropriate date in pandas
     # print sif["dateY"].unique()
+
 
     sif["nbptr"] = sif.nbptr.values / 100
     sif["rfr_n_2"] = sif.mnrvka.values
@@ -150,23 +160,6 @@ def sif(temporary_store = None, year = None):
         sif["nbP"] = sif.sif.str[85 + d: 87 + d]
 
     del sif["stamar"]
-
-    # Drop a declaration if more than 2 (yes it happens)
-    if year == 2009:
-        # Maraige et divorce dans l'année, on élimine le premier célibat
-        sif.drop(sif.index[sif.declar == "01-09005688-C1979-9999-X00 M-F2004"], inplace = True)
-
-    duplicated_noindiv = sif.noindiv[sif.noindiv.duplicated()].copy()
-    assert duplicated_noindiv.value_counts().max() == 1
-
-    sif['duplicated_noindiv'] = sif.noindiv.isin(duplicated_noindiv)
-    sif['change'] = "NONE"
-    sif.loc[sif.duplicated_noindiv, 'change'] = sif.loc[sif.duplicated_noindiv, 'declar'].str[27:28]
-
-
-    log.info("Number of individuals: {}".format(len(sif.noindiv)))
-    log.info("Number of duplicated individuals: {}".format(len(duplicated_noindiv)))
-    log.info("Number of distinct individuals: {}".format(len(sif.noindiv.value_counts())))
 
     log.info(u"Saving sif")
     temporary_store['sif_{}'.format(year)] = sif
@@ -188,13 +181,29 @@ def foyer_all(temporary_store = None, year = None):
     # rename variable to fxzz ou ^f[0-9][a-z]{2}")
     renamed_variables = ["f{}".format(x[1:]) for x in variables]
 
-    foyer = foyer_all[variables + ["noindiv"]].copy()  # Memory expensive ...
+    foyer = foyer_all[variables + ["noindiv", "declar"]].copy()  # Memory expensive ...
     del foyer_all
     gc.collect()
     foyer.rename(columns = dict(zip(variables, renamed_variables)), inplace = True)
 
+    # Drop a declaration if more than 2 (yes it happens)
+    #    if year == 2009:
+    #        # Maraige et divorce dans l'année, on élimine le premier célibat
+    #        foyer.drop(sif.index[sif.declar == "01-09005688-C1979-9999-X00 M-F2004"], inplace = True)
+
+    duplicated_noindiv = foyer.noindiv[foyer.noindiv.duplicated()].copy()
+    assert duplicated_noindiv.value_counts().max() == 1
+
+    foyer['duplicated_noindiv'] = sif.noindiv.isin(duplicated_noindiv)
+    foyer['change'] = "NONE"
+    foyer.loc[foyer.duplicated_noindiv, 'change'] = foyer.loc[foyer.duplicated_noindiv, 'declar'].str[27:28]
+
+    log.info("Number of individuals: {}".format(len(foyer.noindiv)))
+    log.info("Number of duplicated individuals: {}".format(len(duplicated_noindiv)))
+    log.info("Number of distinct individuals: {}".format(len(foyer.noindiv.value_counts())))
+
     # On aggrège les déclarations dans le cas où un individu a fait plusieurs déclarations
-    foyer = foyer.groupby("noindiv", as_index = False).aggregate(numpy.sum)
+    # foyer = foyer.groupby("noindiv", as_index = False).aggregate(numpy.sum)
     print_id(foyer)
 
     # On récupère les variables individualisables
@@ -344,9 +353,9 @@ def foyer_all(temporary_store = None, year = None):
         'f7vz': ['f7vz'],  #
         'f7vx': ['f7vx'],  #
         # Divers
-        'f8by': ['f8by','f8cy'],  # Elus locaux
+        'f8by': ['f8by', 'f8cy'],  # Elus locaux
         'f8ut': ['f8ut'],  #
-        #Revenus à l'étranger
+        # Revenus à l'étranger
         'f8ti': ['f8ti'],  # Revenus à l'étranger
         'f8tl': ['f8tl'],  #
         'f8tk': ['f8tk'],  #
