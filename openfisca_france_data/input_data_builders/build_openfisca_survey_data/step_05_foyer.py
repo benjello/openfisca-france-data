@@ -67,7 +67,6 @@ def sif(temporary_store = None, year = None):
         variables = ["noindiv", 'sif', "nbptr", "mnrvka", "rbg", "tsrvbg", "declar"],
         table = year_specific_by_generic["foyer"]
         )
-
     sif['statmarit'] = 0
 
     if year == 2009:
@@ -85,7 +84,7 @@ def sif(temporary_store = None, year = None):
     # Converting marital status
     statmarit_dict = {"M": 1, "C": 2, "D": 3, "V": 4, "O": 5}
     for key, val in statmarit_dict.iteritems():
-        sif.statmarit.loc[sif.stamar == key] = val
+        sif.loc[sif.stamar == key, 'statmarit'] = val
 
     sif["birthvous"] = sif.sif.str[5:9]
     sif["birthconj"] = sif.sif.str[10:14]
@@ -128,22 +127,23 @@ def sif(temporary_store = None, year = None):
     sif["dateX"] = sif.sif.str[34 + d: 42 + d]
     sif["caseY"] = sif.sif.str[42 + d: 43 + d] == "Y"
     sif["dateY"] = sif.sif.str[43 + d: 51 + d]
-    sif["caseZ"] = sif.sif.str[51 + d: 53 + d] == "Z"
+    sif["caseZ"] = sif.sif.str[51 + d: 52 + d] == "Z"
     sif["dateZ"] = sif.sif.str[52 + d: 60 + d]
     sif["causeXYZ"] = sif.sif.str[60 + d: 61 + d]
 
     sif['days_in_year'] = (
-        (sif.dateX.str[0:2].astype('int') + sif.dateX.str[2:4].astype('int') * 30) * sif["caseX"] +
-        (sif.dateY.str[0:2].astype('int') + sif.dateY.str[2:4].astype('int') * 30) * sif["caseY"] +
-        (sif.dateZ.str[0:2].astype('int') + sif.dateZ.str[2:4].astype('int') * 30) * sif["caseZ"]
+        (sif.dateX.str[0:2].astype('int') + (sif.dateX.str[2:4].astype('int') - 1) * 30) * sif["caseX"] +
+        (sif.dateY.str[0:2].astype('int') + (sif.dateY.str[2:4].astype('int') - 1) * 30) * sif["caseY"] +
+        (sif.dateZ.str[0:2].astype('int') + (sif.dateZ.str[2:4].astype('int') - 1) * 30) * sif["caseZ"]
         )
     sif['revenue_factor'] = (
-        (sif.causeXYZ != '') * 365 / sif.days_in_year +
-        (sif.causeXYZ == '') * 365 / (365 - sif.days_in_year)
-        ) * (sif.days_in_year > 0)    # 1 for non double declaration
+        (sif.causeXYZ.isin(['M', 'Z', 'S', 'D'])) * 365 / sif.days_in_year +
+        (~sif.causeXYZ.isin(['M', 'Z', 'S', 'D'])) * 365 / (365 - sif.days_in_year)
+        ) * (365 >= sif.days_in_year) * (sif.days_in_year > 0)
+    sif.loc[sif.days_in_year == 0, 'revenue_factor'] = 1
+    sif.loc[sif.days_in_year >= 365, 'revenue_factor'] = 1
     # TODO: convert dateXYZ to appropriate date in pandas
     # print sif["dateY"].unique()
-
 
     sif["nbptr"] = sif.nbptr.values / 100
     sif["rfr_n_2"] = sif.mnrvka.values
@@ -158,9 +158,7 @@ def sif(temporary_store = None, year = None):
 
     if (year != 2009):
         sif["nbP"] = sif.sif.str[85 + d: 87 + d]
-
     del sif["stamar"]
-
     log.info(u"Saving sif")
     temporary_store['sif_{}'.format(year)] = sif
     del sif
@@ -175,6 +173,7 @@ def foyer_all(temporary_store = None, year = None):
     erfs_survey_collection = SurveyCollection.load(collection = 'erfs', config_files_directory = config_files_directory)
     data = erfs_survey_collection.get_survey('erfs_{}'.format(year))
     foyer_all = data.get_values(table = year_specific_by_generic["foyer"])
+    print len(foyer_all)
     # on ne garde que les cases de la déclaration ('_xzz') ou ^_[0-9][a-z]{2}")
     regex = re.compile("^_[0-9][a-z]{2}")
     variables = [x for x in foyer_all.columns if regex.match(x)]
@@ -185,6 +184,14 @@ def foyer_all(temporary_store = None, year = None):
     del foyer_all
     gc.collect()
     foyer.rename(columns = dict(zip(variables, renamed_variables)), inplace = True)
+    print len(foyer)
+    sif = temporary_store['sif_{}'.format(year)]
+    revenue_factor = sif[['revenue_factor', 'declar']].copy()
+    del sif
+    gc.collect()
+    foyer = foyer.merge(revenue_factor, on = 'declar')
+    print len(foyer)
+    return foyer
 
     # Drop a declaration if more than 2 (yes it happens)
     #    if year == 2009:
@@ -194,9 +201,13 @@ def foyer_all(temporary_store = None, year = None):
     duplicated_noindiv = foyer.noindiv[foyer.noindiv.duplicated()].copy()
     assert duplicated_noindiv.value_counts().max() == 1
 
-    foyer['duplicated_noindiv'] = sif.noindiv.isin(duplicated_noindiv)
+    foyer['duplicated_noindiv'] = foyer.noindiv.isin(duplicated_noindiv)
     foyer['change'] = "NONE"
     foyer.loc[foyer.duplicated_noindiv, 'change'] = foyer.loc[foyer.duplicated_noindiv, 'declar'].str[27:28]
+
+    double_declarations = foyer.loc[foyer.duplicated_noindiv, ['noindiv', 'declar', 'revenue_factor'].copy()
+    double_declarations_reduced = double_declarations.groupby(by = 'noindiv').aggregate(min)
+    # TODO remove superfluous declar
 
     log.info("Number of individuals: {}".format(len(foyer.noindiv)))
     log.info("Number of duplicated individuals: {}".format(len(duplicated_noindiv)))
@@ -204,6 +215,7 @@ def foyer_all(temporary_store = None, year = None):
 
     # On aggrège les déclarations dans le cas où un individu a fait plusieurs déclarations
     # foyer = foyer.groupby("noindiv", as_index = False).aggregate(numpy.sum)
+
     print_id(foyer)
 
     # On récupère les variables individualisables
@@ -435,5 +447,5 @@ def foyer_all(temporary_store = None, year = None):
 if __name__ == '__main__':
     year = 2009
     sif(year = year)
-    foyer_all(year = year)
+#    foyer_all(year = year)
     log.info(u"étape 05 foyer terminée")
