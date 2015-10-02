@@ -73,11 +73,11 @@ def final(temporary_store = None, year = None, check = True):
         assert final_fip[var].notnull().all(), "Some NaN are remaining in column {}".format(var)
 
     final_fip["activite"] = 2 # TODO comment choisr la valeur par défaut ?
-    final_fip.activite = where(final_fip.choi > 0, 1, final_fip.activite)
-    final_fip.activite = where(final_fip.sali > 0, 0, final_fip.activite)
-    final_fip.activite = where(final_fip.age > 21, 2, final_fip.activite)  # ne peuvent être rattachés que les étudiants
-
+    final_fip.loc[final_fip.choi > 0, 'activite'] = 1
+    final_fip.loc[final_fip.sali > 0, 'activite'] = 0
+    final_fip.loc[final_fip.age > 21, 'activite'] = 2  # ne peuvent être rattachés que les étudiants
     final.update(final_fip)
+    gc.collect()
     temporary_store['final_{}'.format(year)] = final
     log.info("final has been updated with fip")
 
@@ -153,7 +153,7 @@ def final(temporary_store = None, year = None, check = True):
     log.info(menagem.info())
     available_variables = list(set(all_variables).intersection(set(menagem.columns)))
     log.info("liste des variables à extraire de menagem: {}".format(available_variables))
-    loyersMenages = menagem[available_variables].copy()
+    loyersMenages = menagem.loc[:, available_variables].copy()
 #
 # # Recodage de typmen15: modalités de 1:15
 # table(loyersMenages$typmen15, useNA="ifany")
@@ -190,19 +190,18 @@ def final(temporary_store = None, year = None, check = True):
 # loyersMenages[loyersMenages$ddipl>1, "ddipl"] <- loyersMenages$ddipl[loyersMenages$ddipl>1]-1
 #
     log.info("loyersMenages \n {}".format(loyersMenages.info()))
-    loyersMenages.ddipl = where(loyersMenages.ddipl.isnull(), 7, loyersMenages.ddipl)
-    loyersMenages.ddipl = where(loyersMenages.ddipl > 1,
-                                loyersMenages.ddipl - 1,
-                                loyersMenages.ddipl)
+    loyersMenages.loc[loyersMenages.ddipl.isnull(), 'loyersMenages'] =  7
+    loyersMenages.loc[loyersMenages.ddipl > 1, 'loyersMenages'] = (
+        loyersMenages.loc[loyersMenages.ddipl > 1, 'loyersMenages'].copy() - 1)
     loyersMenages.ddipl = loyersMenages.ddipl.astype("int32")
 
     final['act5'] = NaN
-    final.act5 = where(final.actrec == 1, 2, final.act5)  # indépendants
-    final.act5 = where(final.actrec.isin([2, 3]), 1, final.act5)  # salariés
+    final.loc[final.actrec == 1, 'act5'] = 2  # indépendants
+    final.loc[final.actrec.isin([2, 3]), 'act5'] = 1  # salariés
 
-    final.act5 = where(final.actrec == 4, 3, final.act5)  # chômeur
-    final.act5 = where(final.actrec == 7, 4, final.act5)  # retraité
-    final.act5 = where(final.actrec == 8, 5, final.act5)  # autres inactifs
+    final.loc[final.actrec == 4, 'act5'] = 3  # chômeur
+    final.loc[final.actrec == 7, 'act5'] = 4  # retraité
+    final.loc[final.actrec == 8, 'act5'] = 5  # autres inactifs
 
     log.info("Valeurs prises par act5: \n {}".format(final.act5.value_counts()))
 
@@ -304,7 +303,7 @@ def final(temporary_store = None, year = None, check = True):
     temporary_store['final2'] = final2
     log.info("Nombre de personne d'âge NaN: {} ".format(final2.age.isnull().sum()))
     final2 = final2.drop_duplicates(subset = 'noindiv')
-
+    gc.collect()
     log.info('    Filter to manage the new 3-tables structures:')
     # On récupère les foyer, famille, ménages qui ont un chef :
     # On ne conserve dans final2 que ces foyers là :

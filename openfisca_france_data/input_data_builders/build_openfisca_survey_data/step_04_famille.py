@@ -570,44 +570,30 @@ def famille(temporary_store = None, year = None):
     log.info(u"value_counts kid :' \n {}".format(famille['kid'].value_counts()))
 
     famille['quifam'] = -1
-    # famille['quifam'] = famille['quifam'].where(famille['chef'].values, 0)
-    # ATTENTTION : ^ stands for XOR
     famille.quifam = (0 +
         ((~famille['chef']) & (~famille['kid'])).astype(int) +
         famille.kid * famille.rang
         ).astype('int')
 
-    # TODO: Test a groupby to improve the following this (should be placed )
-    #    assert famille['chef'].sum() == len(famille.noifam.unique()), \
-    #      'The number of family chiefs {} is different from the number of families {}'.format(
-    #          famille['chef'].sum(),
-    #          len(famille.idfam.unique())
-    #          )
-
-    #    famille['noifam'] = famille['noifam'].astype('int')
     log.info(u"value_counts quifam : \n {}".format(famille['quifam'].value_counts()))
-    famille = famille[['noindiv', 'quifam', 'noifam']].copy()
+    famille = famille.loc[:, ['noindiv', 'quifam', 'noifam']].copy()
     famille.rename(columns = {'noifam': 'idfam'}, inplace = True)
     log.info(u"Vérifications sur famille")
     # TODO: we drop duplicates if any
 
-    duplicated_famillle_count = famille.duplicated(subset = ['idfam', 'quifam']).sum()
-    if duplicated_famillle_count > 0:
+    if famille.duplicated(subset = ['idfam', 'quifam']).sum() > 0:
         log.info(u"There are {} duplicates of quifam inside famille, we drop them".format(
             )
             )
         famille.drop_duplicates(subset = ['idfam', 'quifam'], inplace = True)
-        # assert not(famille.duplicated(subset = ['idfam', 'quifam']).any()), \
-        #   'There are {} duplicates of quifam inside famille'.format(
-        #       famille.duplicated(subset = ['idfam', 'quifam']).sum())
 
     temporary_store["famc_{}".format(year)] = famille
     del indivi, enfants_a_naitre
 
 if __name__ == '__main__':
-    import sys
-    logging.basicConfig(level = logging.INFO, stream = sys.stdout)
-    # logging.basicConfig(level = logging.INFO,  filename = 'step_06.log', filemode = 'w')
+    # import sys
+    # logging.basicConfig(level = logging.INFO, stream = sys.stdout)
+    logging.basicConfig(level = logging.INFO,  filename = 'step_04.log', filemode = 'w')
     year = 2009
     famille(year = year)
     log.info(u"étape 04 famille terminée")

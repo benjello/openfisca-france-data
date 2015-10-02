@@ -135,10 +135,8 @@ def create_totals(temporary_store = None, year = None):
     indivi_fnd = indivi.loc[fip_no_declar, ["idfoy", "noindiv"]].copy()
 
     while any(indivi_fnd.duplicated(subset = ["idfoy"])):
-        indivi_fnd["idfoy"] = where(
-            indivi_fnd.duplicated(subset = ["idfoy"]),
-            indivi_fnd["idfoy"] + 1,
-            indivi_fnd["idfoy"]
+        indivi_fnd.loc[indivi_fnd.duplicated(subset = ["idfoy"]), "idfoy"] = (
+            indivi_fnd.loc[indivi_fnd.duplicated(subset = ["idfoy"]), "idfoy"] + 1
             )
 
     # assert indivi_fnd["idfoy"].duplicated().value_counts()[False] == len(indivi_fnd["idfoy"].values), \
@@ -209,7 +207,7 @@ def create_totals(temporary_store = None, year = None):
     df.idfoy = (df.which == "pere") * df.noindiv_p
     df.idfoy = (df.which == "mere") * df.noindiv_m
 
-    df['idfoy'] = where(df.which == "mere", df.noindiv_m, df.noindiv_p)
+    df['idfoy'] = where(df.which == "mere", df.noindiv_m.copy(), df.noindiv_p.copy())
     assert df["idfoy"].notnull().all()
     dropped = [col for col in df.columns if col not in ["idfoy", "noindiv"]]
     df.drop(dropped, axis = 1, inplace = True)
@@ -305,8 +303,8 @@ def create_totals(temporary_store = None, year = None):
         indivi.loc[indivi_without_declarant_has_declar2, "idmen"].astype('int') * 100 +
         indivi.loc[indivi_without_declarant_has_declar2, "declar2"].str[0:2].astype('int')
         )
-    indivi.loc[indivi_without_declarant_has_declar2, 'idfoy'] = where(decl2_idfoy.isin(with_.values), decl2_idfoy, None)
-
+    indivi.loc[indivi_without_declarant_has_declar2, 'idfoy'] = None
+    indivi.loc[indivi_without_declarant_has_declar2 & decl2_idfoy.isin(with_.values), 'idfoy'] = decl2_idfoy
     del with_, without, indivi_without_declarant_has_declar2
 
     log.info(u"    5.1 : Elimination idfoy restant")
@@ -461,7 +459,7 @@ def create_totals(temporary_store = None, year = None):
     print_id(pac)
     indivi = indivi.merge(pac, on = ['noindiv', 'idfoy'], how = "left")
     indivi['quifoy'] = indivi['quifoy_x']
-    indivi['quifoy'] = where(indivi['quifoy_x'] == 2, indivi['quifoy_y'], indivi['quifoy_x'])
+    indivi['quifoy'] = where(indivi['quifoy_x'] == 2, indivi['quifoy_y'].copy(), indivi['quifoy_x'].copy())
     del indivi['quifoy_x'], indivi['quifoy_y']
     print_id(indivi)
 
